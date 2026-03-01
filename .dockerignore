@@ -1,0 +1,39 @@
+# =============================================================================
+# .dockerignore — same concept as .gitignore, but for Docker builds
+# =============================================================================
+# When you run `docker build`, Docker sends ALL files in your directory to the
+# Docker daemon as the "build context". If you include node_modules (hundreds
+# of MB), your build will be slow even before any instructions run.
+#
+# .dockerignore tells Docker: "Don't send these files."
+# Result: faster builds, smaller context, no accidental secret leaks.
+# =============================================================================
+
+# Never copy installed packages — we install fresh inside the container
+node_modules
+*/node_modules
+npm-debug.log*
+
+# Git history is irrelevant inside the container
+.git
+.gitignore
+
+# Runtime artifacts from Phase 1 (not needed in container)
+logs/
+.pids/
+*.log
+
+# CI / development artifacts
+.env
+.env.*
+coverage/
+.nyc_output/
+
+# Docs and infra (not part of the service code)
+docs/
+infra/
+
+# IDE files
+.vscode/
+.idea/
+.DS_Store

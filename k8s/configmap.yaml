@@ -1,0 +1,47 @@
+# =============================================================================
+# LESSON: ConfigMaps — non-secret configuration
+# =============================================================================
+# ConfigMaps store key-value config that isn't sensitive.
+# Examples: service hostnames, ports, feature flags, log levels.
+#
+# Why ConfigMap instead of hardcoding in Deployments?
+#   - Change config WITHOUT rebuilding the Docker image
+#   - Use the same image in dev/staging/prod, just different ConfigMaps
+#   - One place to update when a service URL changes
+#
+# RULE: ConfigMap = anything you'd put in a .env file that isn't a secret.
+# RULE: Secret    = passwords, API keys, tokens (next file).
+#
+# In Kubernetes, service-to-service URLs use this pattern:
+#   http://<service-name>.<namespace>.svc.cluster.local:<port>
+# But within the SAME namespace, you can just use the service name:
+#   http://product-service:3002
+# =============================================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shopflow-config
+  namespace: shopflow
+data:
+  # Database connection (host = the K8s Service name for postgres)
+  DB_HOST: "postgres"
+  DB_PORT: "5432"
+
+  # Service ports
+  USER_SERVICE_PORT: "3001"
+  PRODUCT_SERVICE_PORT: "3002"
+  ORDER_SERVICE_PORT: "3003"
+  NOTIFICATION_SERVICE_PORT: "3004"
+  GATEWAY_PORT: "3000"
+
+  # Service-to-service URLs (using K8s Service DNS names)
+  USER_SERVICE_URL: "http://user-service:3001"
+  PRODUCT_SERVICE_URL: "http://product-service:3002"
+  ORDER_SERVICE_URL: "http://order-service:3003"
+  NOTIFICATION_SERVICE_URL: "http://notification-service:3004"
+
+  # Database names
+  USERS_DB_NAME: "shopflow_users"
+  PRODUCTS_DB_NAME: "shopflow_products"
+  ORDERS_DB_NAME: "shopflow_orders"

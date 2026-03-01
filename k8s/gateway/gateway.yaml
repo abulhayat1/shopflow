@@ -1,0 +1,88 @@
+# =============================================================================
+# LESSON: Gateway — the only service exposed to the outside world
+# =============================================================================
+# All other services use ClusterIP (internal only).
+# The gateway uses NodePort here (for kind/local cluster).
+# In AWS EKS (Phase 3), it would use LoadBalancer to get an ELB automatically.
+#
+# Traffic flow in K8s:
+#   Internet → Ingress (nginx-ingress-controller) → gateway Service → gateway Pods
+#                                                  → (other services stay internal)
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: shopflow
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: gateway
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }
+  template:
+    metadata:
+      labels:
+        app: gateway
+    spec:
+      containers:
+        - name: gateway
+          image: shopflow/gateway:local
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 3000
+          env:
+            - name: PORT
+              value: "3000"
+            - name: USER_SERVICE_URL
+              valueFrom:
+                configMapKeyRef: { name: shopflow-config, key: USER_SERVICE_URL }
+            - name: PRODUCT_SERVICE_URL
+              valueFrom:
+                configMapKeyRef: { name: shopflow-config, key: PRODUCT_SERVICE_URL }
+            - name: ORDER_SERVICE_URL
+              valueFrom:
+                configMapKeyRef: { name: shopflow-config, key: ORDER_SERVICE_URL }
+            - name: NOTIFICATION_SERVICE_URL
+              valueFrom:
+                configMapKeyRef: { name: shopflow-config, key: NOTIFICATION_SERVICE_URL }
+          livenessProbe:
+            httpGet: { path: /health, port: 3000 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /health, port: 3000 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests: { cpu: "50m", memory: "64Mi" }
+            limits: { cpu: "300m", memory: "256Mi" }
+
+---
+# =============================================================================
+# LESSON: NodePort Service
+# =============================================================================
+# NodePort exposes the service on a static port on EVERY cluster node.
+# For kind (local cluster): access via localhost:<nodePort>
+# For AWS EKS: replaced by an Ingress + ALB (we'll do this in Phase 3).
+#
+# Ports explained:
+#  port:       the port the Service itself listens on (within the cluster)
+#  targetPort: the port on the Pod (must match containerPort)
+#  nodePort:   the port exposed on the Node (30000-32767 range)
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: shopflow
+spec:
+  type: NodePort
+  selector:
+    app: gateway
+  ports:
+    - port: 3000
+      targetPort: 3000
+      nodePort: 30000    # access via http://localhost:30000 when using kind

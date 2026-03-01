@@ -1,0 +1,252 @@
+# =============================================================================
+# 🐳 docker-compose.yml — ShopFlow Local Development Stack
+# =============================================================================
+# LESSON: What is Docker Compose?
+# =============================================================================
+# Docker Compose is an orchestrator for LOCAL development.
+# With one command (docker compose up), it:
+#   1. Builds all images
+#   2. Creates a private Docker network
+#   3. Starts all containers in dependency order
+#   4. Wires service discovery (services talk by NAME, not localhost:PORT)
+#
+# Compare to Phase 1:
+#   Phase 1:  ./start.sh  → bash manages processes, PID files, port checks
+#   Phase 2:  docker compose up → Docker manages everything automatically
+#
+# Key difference: Compose uses SERVICE NAMES for networking.
+# Order-service calls: http://product-service:3002  (not localhost:3002!)
+# Docker's internal DNS resolves "product-service" to the right container IP.
+# This is your FIRST taste of service discovery — and it previews K8s DNS.
+# =============================================================================
+
+# compose file spec version (v3.8 supports healthchecks + depends_on conditions)
+name: shopflow
+
+services:
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # PostgreSQL — the shared database
+  # ──────────────────────────────────────────────────────────────────────────
+  # LESSON: Why use the official postgres image, not build our own?
+  # Official images are maintained, security-patched, and optimized.
+  # We customize via ENV variables + init scripts — no custom Dockerfile needed.
+  # ──────────────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: shopflow-postgres
+    environment:
+      POSTGRES_PASSWORD: shopflow123 # superuser password
+      POSTGRES_USER: shopflow # creates this user automatically
+      POSTGRES_DB: shopflow_users # creates this DB automatically
+    ports:
+      - "5433:5432"
+        # host:container — using 5433 so we don't conflict with
+        # your locally-running PostgreSQL from Phase 1
+    volumes:
+      # LESSON: Named Volumes — data that survives container restarts
+      # Without this: every `docker compose down` DELETES your database!
+      # With it: data lives in Docker's managed storage, persists across restarts.
+      - postgres_data:/var/lib/postgresql/data
+
+      # Mount our init.sql to run on first startup only
+      # Postgres official image runs any .sql in this directory on first boot
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+    healthcheck:
+      # LESSON: Healthchecks in Compose
+      # Other services (via depends_on) will WAIT until postgres is healthy
+      # before starting. This solves the startup ordering problem from Phase 1!
+      # In Phase 1, we manually waited with `nc -z localhost 5432`.
+      # Compose does this automatically.
+      test: [ "CMD-SHELL", "pg_isready -U shopflow -d shopflow_users" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s # give postgres time to init on first run
+    networks:
+      - shopflow-net
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # User Service
+  # ──────────────────────────────────────────────────────────────────────────
+  user-service:
+    build:
+      context: ./services/user-service # Dockerfile location
+      target: runner # stop at the "runner" stage (not builder)
+    container_name: shopflow-user
+    environment:
+      PORT: 3001
+      DB_HOST: postgres # ← SERVICE NAME, not localhost! Docker DNS resolves this
+      DB_PORT: 5432
+      DB_NAME: shopflow_users
+      DB_USER: shopflow
+      DB_PASSWORD: shopflow123
+      JWT_SECRET: shopflow-dev-secret-change-in-prod
+    ports:
+      - "3001:3001" # expose to host so you can curl it directly
+    depends_on:
+      postgres:
+        condition: service_healthy # only start AFTER postgres healthcheck passes
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:3001/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - shopflow-net
+    # LESSON: restart policy
+    # "unless-stopped" = restart on crash, but not if you manually stopped it
+    # In Kubernetes, this is handled by the Deployment controller automatically
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Product Service
+  # ──────────────────────────────────────────────────────────────────────────
+  product-service:
+    build:
+      context: ./services/product-service
+      target: runner
+    container_name: shopflow-product
+    environment:
+      PORT: 3002
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: shopflow_products
+      DB_USER: shopflow
+      DB_PASSWORD: shopflow123
+    ports:
+      - "3002:3002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:3002/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - shopflow-net
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Order Service
+  # ──────────────────────────────────────────────────────────────────────────
+  order-service:
+    build:
+      context: ./services/order-service
+      target: runner
+    container_name: shopflow-order
+    environment:
+      PORT: 3003
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: shopflow_orders
+      DB_USER: shopflow
+      DB_PASSWORD: shopflow123
+      # LESSON: Service-to-service URLs use Docker service names as hostnames
+      # "product-service" resolves inside Docker's network to the product container
+      # This is exactly how Kubernetes Service DNS works in Phase 3:
+      # http://product-service.shopflow.svc.cluster.local:3002
+      PRODUCT_SERVICE_URL: http://product-service:3002
+      NOTIFICATION_SERVICE_URL: http://notification-service:3004
+    ports:
+      - "3003:3003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      product-service:
+        condition: service_healthy # needs product-service to validate stock
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:3003/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - shopflow-net
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Notification Service
+  # ──────────────────────────────────────────────────────────────────────────
+  notification-service:
+    build:
+      context: ./services/notification-service
+      target: runner
+    container_name: shopflow-notification
+    environment:
+      PORT: 3004
+    ports:
+      - "3004:3004"
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:3004/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - shopflow-net
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # API Gateway — starts LAST, after all services are healthy
+  # ──────────────────────────────────────────────────────────────────────────
+  # LESSON: depends_on replaces the ordering logic in start.sh
+  # The gateway waits until user, product, order, notification are all healthy.
+  # In Phase 1 we had to implement this manually with wait_for_port().
+  # Compose + healthchecks handle this declaratively — you STATE what you want,
+  # and the tool figures out how to achieve it.
+  # ──────────────────────────────────────────────────────────────────────────
+  gateway:
+    build:
+      context: ./services/gateway
+      target: runner
+    container_name: shopflow-gateway
+    environment:
+      PORT: 3000
+      USER_SERVICE_URL: http://user-service:3001
+      PRODUCT_SERVICE_URL: http://product-service:3002
+      ORDER_SERVICE_URL: http://order-service:3003
+      NOTIFICATION_SERVICE_URL: http://notification-service:3004
+    ports:
+      - "3000:3000" # THE only port exposed to your browser/curl
+    depends_on:
+      user-service:
+        condition: service_healthy
+      product-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
+    networks:
+      - shopflow-net
+    restart: unless-stopped
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Networks
+# ─────────────────────────────────────────────────────────────────────────────
+# LESSON: Docker Networks = isolation + DNS
+# Every service in this network can reach any other by service NAME.
+# Services NOT in this network cannot reach them — good for security.
+#
+# In Kubernetes, network isolation is even more powerful:
+# - NetworkPolicies control which pods can talk to which (like a firewall)
+# - Services get a stable DNS name regardless of which pod serves them
+# ─────────────────────────────────────────────────────────────────────────────
+networks:
+  shopflow-net:
+    driver: bridge # standard Docker network (uses Linux bridge + iptables)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Volumes
+# ─────────────────────────────────────────────────────────────────────────────
+# LESSON: Named volumes persist data across `docker compose down` + `up`.
+# `docker compose down -v` removes volumes too (destroys data — use carefully!)
+# In Kubernetes, we use PersistentVolumeClaims (PVCs) for the same purpose.
+# ─────────────────────────────────────────────────────────────────────────────
+volumes:
+  postgres_data:

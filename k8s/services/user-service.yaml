@@ -1,0 +1,170 @@
+# =============================================================================
+# LESSON: Kubernetes Deployment — the core workload resource
+# =============================================================================
+# A Deployment tells Kubernetes:
+#   "I want N copies of this pod, running this container image, always."
+#
+# When you apply a Deployment, the Deployment Controller:
+#  1. Creates a ReplicaSet (manages the desired number of pods)
+#  2. ReplicaSet creates Pods
+#  3. If a pod crashes → ReplicaSet creates a replacement automatically
+#  4. If you update the image → rolling update (old pods replaced one by one)
+#
+# Structure:
+#  Deployment
+#    └── ReplicaSet (manages versioning)
+#         └── Pod × replicas (the actual running containers)
+#
+# YOU manage Deployments. Kubernetes manages everything below it.
+# =============================================================================
+
+# ─── user-service Deployment ──────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-service
+  namespace: shopflow
+  labels:
+    app: user-service
+    version: "1.0.0"
+spec:
+  replicas: 2    # LESSON: 2 replicas = high availability. If pod-1 crashes,
+                 # pod-2 still serves traffic. Load balanced automatically.
+
+  # LESSON: selector.matchLabels is how Deployments FIND their pods.
+  # The Deployment only manages pods whose labels match this selector.
+  # This MUST match the labels in spec.template.metadata.labels.
+  selector:
+    matchLabels:
+      app: user-service
+
+  # LESSON: Rolling Update Strategy
+  # When you push a new image, how does K8s update without downtime?
+  # strategy: RollingUpdate
+  #   maxUnavailable: 0  → never take a pod down before a new one is ready
+  #   maxSurge: 1        → create 1 EXTRA pod during the update
+  #
+  # Update sequence with 2 replicas:
+  #  Step 1: Create new pod (now 3 total: 2 old, 1 new)
+  #  Step 2: When new pod is ready, delete 1 old pod (2 total: 1 old, 1 new)
+  #  Step 3: Create another new pod (3 total: 1 old, 2 new)
+  #  Step 4: When ready, delete last old pod (2 total: 2 new)
+  # Zero downtime! Clients always have at least 2 healthy pods.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+  template:
+    metadata:
+      labels:
+        app: user-service       # ← must match selector.matchLabels above
+        version: "1.0.0"
+    spec:
+      containers:
+        - name: user-service
+          image: shopflow/user-service:local
+          imagePullPolicy: Never    # use local image (no registry yet) — change to Always in prod
+
+          ports:
+            - containerPort: 3001
+
+          # ─── Environment Variables from ConfigMap + Secret ────────────────
+          # LESSON: envFrom vs env
+          # envFrom: inject the ENTIRE ConfigMap/Secret as env vars (all keys)
+          # env:     inject specific keys with optional renaming
+          # We use env: here to pick specific keys and rename them for our app
+          env:
+            - name: PORT
+              value: "3001"
+            - name: DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: shopflow-config
+                  key: DB_HOST
+            - name: DB_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: shopflow-config
+                  key: DB_PORT
+            - name: DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: shopflow-config
+                  key: USERS_DB_NAME
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: shopflow-secrets
+                  key: DB_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: shopflow-secrets
+                  key: DB_PASSWORD
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: shopflow-secrets
+                  key: JWT_SECRET
+
+          # ─── Probes ───────────────────────────────────────────────────────
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+
+---
+# =============================================================================
+# LESSON: Kubernetes Service — stable network identity for pods
+# =============================================================================
+# Pods are ephemeral. They get new IP addresses every time they're created.
+# A Service gives you a STABLE IP and DNS name that never changes,
+# even as pods come and go.
+#
+# Service types:
+#  ClusterIP    — internal only (pod-to-pod, default)
+#  NodePort     — exposes on every node's IP:port (dev/testing)
+#  LoadBalancer — creates a cloud load balancer (external access in AWS/GCP)
+#  Ingress      — Layer 7 (HTTP) routing, multiple services under one IP
+#
+# For internal services (user, product, order, notification) → ClusterIP
+# For the gateway (external entry point) → we use Ingress (next file)
+#
+# Service DNS:
+#   Within same namespace: http://user-service:3001
+#   Cross-namespace:       http://user-service.shopflow.svc.cluster.local:3001
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-service
+  namespace: shopflow
+spec:
+  type: ClusterIP      # internal only — NOT reachable from outside the cluster
+  selector:
+    app: user-service  # routes traffic to pods matching this label
+  ports:
+    - port: 3001        # port clients use to reach the Service
+      targetPort: 3001  # port on the actual Pod
+      protocol: TCP
