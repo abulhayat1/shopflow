@@ -1,0 +1,24 @@
+# Dependencies
+**/node_modules/
+
+# Environment variables — NEVER commit real secrets!
+.env
+.env.local
+
+# Process IDs (managed by start.sh)
+.pids/
+
+# Log files
+logs/
+*.log
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Build artifacts (Phase 2+)
+dist/
+build/
