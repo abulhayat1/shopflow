@@ -87,16 +87,22 @@ start_service "notification-service" "${ROOT_DIR}/services/notification-service"
 start_service "gateway" "${ROOT_DIR}/services/gateway" 3000
 
 # ── STEP 4: Check Nginx (optional in Phase 1) ─────────────────
-if command -v nginx &>/dev/null; then
-  log "Starting nginx..."
-  if nginx -t -c "${ROOT_DIR}/infra/nginx/nginx.conf" 2>/dev/null; then
-    nginx -c "${ROOT_DIR}/infra/nginx/nginx.conf"
-    ok "Nginx started — ShopFlow available at http://localhost"
+if command -v nginx >/dev/null 2>&1; then
+  log "Checking nginx config..."
+
+  if nginx -t -c "${ROOT_DIR}/infra/nginx/nginx.conf"; then
+    if pgrep nginx >/dev/null; then
+      warn "Nginx already running — skipping start"
+    else
+      log "Starting nginx..."
+      nginx -c "${ROOT_DIR}/infra/nginx/nginx.conf"
+      ok "Nginx started — ShopFlow available at http://localhost"
+    fi
   else
-    warn "Nginx config test failed — skipping nginx (services still available on direct ports)"
+    warn "Nginx config test failed — skipping nginx"
   fi
 else
-  warn "Nginx not installed — services available directly via gateway on port 3000"
+  warn "Nginx not installed — services available via port 3000"
 fi
 
 # ── Done ───────────────────────────────────────────────────────
