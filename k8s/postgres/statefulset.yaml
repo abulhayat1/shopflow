@@ -1,38 +1,9 @@
-# =============================================================================
-# LESSON: StatefulSet vs Deployment — why PostgreSQL is different
-# =============================================================================
-# Most services in Kubernetes use a Deployment. But databases are special.
-#
-# Deployment:
-#   - Pods are interchangeable (any pod can serve any request)
-#   - Pods can be created/deleted in ANY order
-#   - No stable hostname per pod — pod names are random
-#   - No persistent storage guarantee per pod
-#
-# StatefulSet:
-#   - Each pod gets a STABLE NAME: postgres-0, postgres-1, postgres-2
-#   - Pods are created/deleted in ORDER (0 → 1 → 2)
-#   - Each pod gets its OWN PersistentVolumeClaim (own disk)
-#   - The same pod always gets the same storage, even after rescheduling
-#
-# PostgreSQL NEEDS:
-#   ✅ Stable hostname (postgres-0 is always the primary)
-#   ✅ Stable storage (pod-0 always mounts the same disk)
-#   ✅ Ordered startup (primary before replicas)
-#
-# In production, you'd use the CloudNativePG operator or Amazon RDS instead
-# of managing your own PostgreSQL in K8s. We do this here to learn the concept.
-# =============================================================================
-
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: postgres-init
   namespace: shopflow
 data:
-  # We need to adjust init.sql for K8s: the DB is created via env vars
-  # so we only need the TABLE creation parts here.
-  # The 3 databases are created by our services' init jobs.
   init.sql: |
     -- Connect to users DB (created automatically from env)
     \connect shopflow_users
@@ -74,8 +45,6 @@ spec:
           ports:
             - containerPort: 5432
           env:
-            # These env vars tell the postgres container to create
-            # the user and initial DB on first boot
             - name: POSTGRES_USER
               valueFrom:
                 secretKeyRef:
@@ -89,23 +58,12 @@ spec:
             - name: POSTGRES_DB
               value: shopflow_users     # postgres creates this DB on first boot
 
-          # ─── Volume Mounts ─────────────────────────────────────────────────
           volumeMounts:
             - name: postgres-data
               mountPath: /var/lib/postgresql/data     # postgres data directory
             - name: init-scripts
               mountPath: /docker-entrypoint-initdb.d  # auto-run on first boot
 
-          # ─── Probes ────────────────────────────────────────────────────────
-          # LESSON: livenessProbe vs readinessProbe
-          # livenessProbe:  "Is this pod alive?"
-          #   → if it fails, K8s RESTARTS the container
-          #   → use for: detecting deadlocks, infinite loops, crashes
-          #
-          # readinessProbe: "Is this pod ready to receive traffic?"
-          #   → if it fails, K8s removes it from Service's load balancer
-          #   → pod is NOT restarted, just taken out of rotation
-          #   → use for: DB still initializing, cache warming up, etc.
           livenessProbe:
             exec:
               command: ["pg_isready", "-U", "shopflow", "-d", "shopflow_users"]
@@ -120,15 +78,6 @@ spec:
             periodSeconds: 5
             failureThreshold: 5
 
-          # ─── Resource Limits ───────────────────────────────────────────────
-          # LESSON: Requests vs Limits
-          # requests: "I need at LEAST this much" — used for scheduling
-          #   K8s finds a node with enough free CPU/RAM to satisfy the request
-          # limits:   "I must NEVER use more than this"
-          #   If a container exceeds its memory limit → OOMKilled (restarted)
-          #   If it exceeds CPU limit → throttled (not killed)
-          #
-          # Without limits: one misbehaving pod can starve all others on the node
           resources:
             requests:
               cpu: "100m"       # 100 millicores = 0.1 CPU core
@@ -142,11 +91,6 @@ spec:
           configMap:
             name: postgres-init    # mount our ConfigMap as files
 
-  # ─── PersistentVolumeClaim Template ────────────────────────────────────────
-  # LESSON: volumeClaimTemplates in StatefulSets
-  # Unlike Deployments, StatefulSets create a PVC PER POD.
-  # If you have 3 replicas, you get 3 separate PVCs (3 separate disks).
-  # This is how Postgres primary/replica storage isolation works.
   volumeClaimTemplates:
     - metadata:
         name: postgres-data
@@ -157,16 +101,6 @@ spec:
             storage: 2Gi              # 2GB disk for our dev database
 
 ---
-# =============================================================================
-# LESSON: Headless Service for StatefulSets
-# =============================================================================
-# Normal Services give you a SINGLE virtual IP that load balances to all pods.
-# For a StatefulSet, each pod needs a STABLE hostname.
-# A Headless Service (clusterIP: None) registers DNS entries per pod:
-#   postgres-0.postgres.shopflow.svc.cluster.local
-#   postgres-1.postgres.shopflow.svc.cluster.local
-# This is how postgres clients always find the PRIMARY (postgres-0).
-# =============================================================================
 apiVersion: v1
 kind: Service
 metadata:

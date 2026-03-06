@@ -1,15 +1,4 @@
 #!/usr/bin/env bash
-# ================================================================
-# ShopFlow - Health Check Script
-# Usage: ./infra/scripts/health.sh
-#
-# ARCHITECT NOTE: In Phase 1 this is a manual script.
-# In Phase 2+, Kubernetes does this automatically with:
-#   - livenessProbe:  "Is the container alive? Should we restart it?"
-#   - readinessProbe: "Is the container ready to receive traffic?"
-# Understanding what these probes check helps you write better
-# /health endpoints that return meaningful status.
-# ================================================================
 
 set -uo pipefail
 

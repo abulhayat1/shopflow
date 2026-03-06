@@ -6,11 +6,6 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3004;
 
-// ARCHITECT NOTE: In Phase 1, we use a simple console-based notifier
-// (or optional SMTP). In Phase 4, we'll replace this with AWS SES + SQS.
-// The key lesson: notification logic is ALWAYS async — fire-and-forget.
-
-// Optional: configure a real SMTP (e.g., Mailtrap for dev)
 const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST || 'localhost',
     port: process.env.SMTP_PORT || 1025,
@@ -20,12 +15,10 @@ const transporter = nodemailer.createTransport({
         : undefined,
 });
 
-// ─── Health Check ──────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', service: 'notification-service' });
 });
 
-// ─── Order Confirmed ───────────────────────────────────────────────────────────
 app.post('/api/notifications/order-confirmed', async (req, res) => {
     const { user_id, order_id, total_amount } = req.body;
 
@@ -45,16 +38,12 @@ app.post('/api/notifications/order-confirmed', async (req, res) => {
         });
         console.log(`[notification-service] Email sent for order #${order_id}`);
     } catch (err) {
-        // ARCHITECT NOTE: We swallow email errors here intentionally.
-        // A notification failure should NEVER fail an order. This is
-        // a classic "resilience" pattern — degrade gracefully.
         console.warn(`[notification-service] Email failed (non-critical):`, err.message);
     }
 
     res.json({ sent: true, order_id });
 });
 
-// ─── Order Shipped ─────────────────────────────────────────────────────────────
 app.post('/api/notifications/order-shipped', async (req, res) => {
     const { user_id, order_id, tracking_number } = req.body;
 
@@ -62,12 +51,10 @@ app.post('/api/notifications/order-shipped', async (req, res) => {
     res.json({ sent: true, order_id, tracking_number });
 });
 
-// ─── Low Stock Alert ───────────────────────────────────────────────────────────
 app.post('/api/notifications/low-stock', async (req, res) => {
     const { product_id, product_name, stock } = req.body;
 
     console.warn(`[notification-service] ⚠️  LOW STOCK ALERT: "${product_name}" (ID: ${product_id}) — only ${stock} left`);
-    // In production: send to Slack/PagerDuty
     res.json({ alerted: true, product_id });
 });
 

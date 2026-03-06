@@ -9,7 +9,6 @@ app.use(express.json());
 const PORT = process.env.PORT || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'shopflow-secret-change-in-prod';
 
-// PostgreSQL connection pool
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
   port: process.env.DB_PORT || 5432,
@@ -18,10 +17,6 @@ const pool = new Pool({
   password: process.env.DB_PASSWORD || 'shopflow123',
 });
 
-// ─── Health Check ──────────────────────────────────────────────────────────────
-// ARCHITECT NOTE: Every service MUST expose a /health endpoint.
-// This is how load balancers, K8s probes, and monitoring tools
-// know if the service is alive. Always return structured JSON.
 app.get('/health', async (req, res) => {
   try {
     await pool.query('SELECT 1');
@@ -31,7 +26,6 @@ app.get('/health', async (req, res) => {
   }
 });
 
-// ─── Register ──────────────────────────────────────────────────────────────────
 app.post('/api/users/register', async (req, res) => {
   const { name, email, password } = req.body;
   if (!name || !email || !password)
@@ -51,7 +45,6 @@ app.post('/api/users/register', async (req, res) => {
   }
 });
 
-// ─── Login ─────────────────────────────────────────────────────────────────────
 app.post('/api/users/login', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password)
@@ -74,7 +67,6 @@ app.post('/api/users/login', async (req, res) => {
   }
 });
 
-// ─── Get Profile ───────────────────────────────────────────────────────────────
 app.get('/api/users/:id', async (req, res) => {
   try {
     const result = await pool.query(

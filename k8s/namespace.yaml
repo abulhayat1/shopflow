@@ -1,24 +1,3 @@
-# =============================================================================
-# LESSON: Kubernetes Namespaces
-# =============================================================================
-# A Namespace is a virtual cluster inside your real cluster.
-# It gives you:
-#
-#  🔒 Isolation — resources in "shopflow" namespace don't affect "monitoring"
-#  🏷️ Scope     — names only have to be unique WITHIN a namespace
-#  💰 Quotas    — you can set CPU/memory limits per namespace
-#  🔐 RBAC      — you can grant permissions per namespace
-#
-# Without namespaces, a 200-engineer company would have all their pods
-# jumbled together in "default" — chaos.
-#
-# Naming convention we'll use:
-#   shopflow       — our application
-#   shopflow-dev   — future dev environment (Phase 3)
-#   shopflow-prod  — future production environment (Phase 3)
-#   monitoring     — Prometheus/Grafana (Phase 4)
-# =============================================================================
-
 apiVersion: v1
 kind: Namespace
 metadata:

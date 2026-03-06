@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# ================================================================
-# ShopFlow - Master Shutdown Script
-# Usage: ./infra/scripts/stop.sh
-# ================================================================
 
 set -euo pipefail
 
@@ -37,14 +33,12 @@ stop_service() {
 
 log "Stopping ShopFlow services..."
 
-# Stop in reverse order (gateway first, then services, then DB)
 stop_service "gateway"
 stop_service "notification-service"
 stop_service "order-service"
 stop_service "product-service"
 stop_service "user-service"
 
-# Stop nginx if running
 if command -v nginx &>/dev/null; then
   nginx -s quit 2>/dev/null && ok "Nginx stopped" || warn "Nginx was not running"
 fi

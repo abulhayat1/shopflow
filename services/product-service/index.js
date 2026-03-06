@@ -14,7 +14,6 @@ const pool = new Pool({
     password: process.env.DB_PASSWORD || 'shopflow123',
 });
 
-// ─── Health Check ──────────────────────────────────────────────────────────────
 app.get('/health', async (req, res) => {
     try {
         await pool.query('SELECT 1');
@@ -24,7 +23,6 @@ app.get('/health', async (req, res) => {
     }
 });
 
-// ─── List Products ─────────────────────────────────────────────────────────────
 app.get('/api/products', async (req, res) => {
     const { category, limit = 20, offset = 0 } = req.query;
     try {
@@ -42,7 +40,6 @@ app.get('/api/products', async (req, res) => {
     }
 });
 
-// ─── Get Single Product ────────────────────────────────────────────────────────
 app.get('/api/products/:id', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM products WHERE id = $1', [req.params.id]);
@@ -54,7 +51,6 @@ app.get('/api/products/:id', async (req, res) => {
     }
 });
 
-// ─── Create Product ────────────────────────────────────────────────────────────
 app.post('/api/products', async (req, res) => {
     const { name, description, price, stock, category, image_url } = req.body;
     if (!name || !price || stock === undefined)
@@ -73,10 +69,6 @@ app.post('/api/products', async (req, res) => {
     }
 });
 
-// ─── Update Stock ──────────────────────────────────────────────────────────────
-// ARCHITECT NOTE: This is called by order-service when a purchase is made.
-// In a real system, you'd use a message queue (SQS/Kafka) instead of direct HTTP
-// to avoid tight coupling. We'll fix this in Phase 4 with async messaging.
 app.patch('/api/products/:id/stock', async (req, res) => {
     const { quantity } = req.body; // negative to decrement, positive to restock
     try {
