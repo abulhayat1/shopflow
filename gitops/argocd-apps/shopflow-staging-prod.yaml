@@ -1,0 +1,39 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: shopflow-staging
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/abulhayat1/shopflow.git
+    targetRevision: main
+    path: gitops/overlays/staging
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: shopflow-staging
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: shopflow-prod
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/abulhayat1/shopflow.git
+    targetRevision: main
+    path: gitops/overlays/prod
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: shopflow-prod
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true

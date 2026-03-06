@@ -1,0 +1,48 @@
+name: CD — Deploy to Environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options: [dev, staging, prod]
+      image_tag:
+        description: 'Image tag to deploy (e.g. sha-abc1234)'
+        required: true
+
+jobs:
+  deploy:
+    name: Deploy to ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update image tags for ${{ inputs.environment }}
+        run: |
+          TAG="${{ inputs.image_tag }}"
+          ENV="${{ inputs.environment }}"
+
+          for svc in user-service product-service order-service notification-service gateway; do
+            sed -i "s|image: ghcr.io/abulhayat1/shopflow/${svc}:.*|image: ghcr.io/abulhayat1/shopflow/${svc}:${TAG}|g" \
+              gitops/overlays/${ENV}/*.yaml 2>/dev/null || true
+          done
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add gitops/
+          git diff --staged --quiet || git commit -m "cd: deploy ${TAG} to ${ENV}"
+          git push
+
+      - name: Summary
+        run: |
+          echo "### Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment:** ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tag:** ${{ inputs.image_tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **ArgoCD will sync within ~3 minutes**" >> $GITHUB_STEP_SUMMARY

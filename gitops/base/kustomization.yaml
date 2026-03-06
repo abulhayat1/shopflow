@@ -1,0 +1,8 @@
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secrets.yaml
+  - postgres-statefulset.yaml
+  - user-service.yaml
+  - backend-services.yaml
+  - gateway.yaml
